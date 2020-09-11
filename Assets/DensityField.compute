@@ -1,0 +1,67 @@
+#include "SimplexNoise3D.hlsl"
+
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel DensityField
+
+RWStructuredBuffer<float> Result;
+
+static uint threadSize = 8;
+
+float3 chunkSize;
+float3 mainPos;
+float cs;
+uint width, height, depth;
+
+uint octaves;
+float amplitude;
+float frequency;
+float roughness;
+float persistence;
+float warpAmplitude;
+float warpFrequency;
+float terraceHeight;
+
+
+float getDensity(float3 pos, float yVal, float floor)
+{
+		float f = frequency;
+		float a = amplitude;
+
+		float density = 0.0;
+		for (uint i=0; i<octaves; i++)
+		{
+				//warping world coords
+				float warp = (snoise(pos * warpFrequency) + 3.0)/2.0 - 1.0;
+				pos += warp * warpAmplitude;
+
+				//setting density
+				float val = ((snoise(pos * f) + 3.0)/2.0 - 1.0) * a;
+				density += (-yVal + val) - floor;
+				f *= roughness;
+				a *= persistence;
+		}
+
+		return density;
+}
+
+
+[numthreads(threadSize,threadSize,threadSize)]
+void DensityField (uint3 id : SV_DispatchThreadID)
+{
+		uint3 cornerTable[8] = {
+				uint3(0, 0, 0),
+				uint3(1, 0, 0),
+				uint3(1, 1, 0),
+				uint3(0, 1, 0),
+				uint3(0, 0, 1),
+				uint3(1, 0, 1),
+				uint3(1, 1, 1),
+				uint3(0, 1, 1)
+		};
+
+		for (int i=0; i<8; i++)
+		{
+				uint3 idplus = id + cornerTable[i];
+				Result[idplus.z * (height+1) * (width+1) + idplus.y * (width+1) + idplus.x] = getDensity((mainPos*chunkSize) + (float3)idplus*cs, idplus.y*cs, mainPos.y*chunkSize.y);
+		}
+}
